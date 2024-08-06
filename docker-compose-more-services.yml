@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: laravel-app
+    container_name: laravel-app
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - .:/var/www
+      # - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    env_file:
+      - .env
+    networks:
+      - app-network
+
+
+  webserver:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "8089:80"
+    volumes:
+      - .:/var/www
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+    networks:
+      - app-network
+    depends_on:
+      - app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nginx.rule=Host(`localhost`)"
+      - "traefik.http.routers.nginx.rule=PathPrefix(`/laravel`)"
+      - "traefik.http.routers.nginx.entrypoints=web"
+      - "traefik.http.services.nginx.loadbalancer.server.port=80"
+  
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - 80:80
+      # - 443:443
+      - 8080:8080
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # - ./data_nossl/traefik.yml:/traefik.yml:ro
+      # - ./data_nossl/ssl/:/ssl/
+      # - ./data_nossl/configurations:/configurations
+    networks:
+      - app-network
+      # - hr-webportal-network
+    labels:
+      - "traefik.enable=true"
+      # - "traefik.http.middlewares.strip-routes.stripprefix.prefixes=/staticfiles"
+      # - "traefik.http.middlewares.strip-routes.stripprefix.prefixes=/staticfiles"
+      # - "traefik.http.middlewares.strip-routes.stripprefix.prefixes=/images"
+      # - "traefik.http.routers.traefik-secure.entrypoints=websecure"
+      # - "traefik.http.routers.traefik-secure.rule=Host(`traefik.careerpath.thaipbs.or.th`)"
+      # - "traefik.http.routers.traefik-secure.middlewares=user-auth@file"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+      # - "traefik.http.services.traefik_dash.loadbalancer.server.port=8080"
+      # - "traefik.http.middlewares.service-redirect.redirectregex.regex=^(https|http)://([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)$$"
+      # - "traefik.http.middlewares.service-redirect.redirectregex.replacement=$${1}://$${2}/$${3}/"
+      # - "traefik.http.middlewares.append-slash-to-training.redirectregex.regex=^(.+/training/[^/]+)$$"
+      # - "traefik.http.middlewares.append-slash-to-training.redirectregex.replacement=$${1}/"
+      - "traefik.http.services.traefik_dash.loadbalancer.server.port=8080"
+  
+  hr-webportal:
+    container_name: hr-webportal
+    build: 
+      context: /Users/sovathapann/Gig_Work/hr-webportal/apphr
+      # dockerfile: Dockerfile
+    # expose:
+    #   - 28999
+    ports:
+      - "28999:28999"
+    depends_on:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      # - "traefik.http.routers.hr-webportal.rule=Host(`hr.thaipbs.or.th`)"
+      - "traefik.http.routers.hr-webportal.rule=Host(`localhost`)"
+      - "traefik.http.routers.hr-webportal.rule=PathPrefix(`/`)"
+      # - "traefik.http.routers.hr-webportal.tls=true"
+      - "traefik.http.services.hr-webportal.loadbalancer.server.port=28999"
+      # - "traefik.http.routers.hr-webportal.entrypoints=web"
+      # - "traefik.http.routers.hr-webportal.service=hr-webportal"
+      # - "traefik.http.routers.hr-webportal.middlewares=service-redirect@docker,strip-routes@docker"
+      # - "traefik.http.routers.hr-webportal.middlewares=service-redirect@docker,strip-routes@docker"
+      # - "traefik.http.middlewares.strip-routes.stripprefix.prefixes=/staticfiles"
+      - "traefik.http.middlewares.strip-routes.stripprefix.prefixes=/static"
+      # - "traefik.http.middlewares.strip-routes.stripprefix.prefixes=/images"
+    networks:
+      # - hr-webportal-network
+      - app-network
+    restart: always
+
+  hr-webportal-static:
+    build:
+      context: /Users/sovathapann/Gig_Work/hr-webportal/apphr
+      dockerfile: dockerfile-static
+    command: /static --header X-SERVER-NAME:static --route-prefix /static
+    ports:
+      - "38084:8080"
+    labels:
+      - "traefik.enable=true"
+      # - "traefik.http.routers.hrportal-static.rule=Host(`hr.thaipbs.or.th`) && PathPrefix(`/static`)"
+      - "traefik.http.routers.hrportal-static.rule=Host(`localhost`) && PathPrefix(`/static`)"
+      - "traefik.http.services.hrportal-static.loadbalancer.server.port=8080"
+    depends_on:
+      - traefik
+    networks:
+      - app-network
+      # - hr-webportal-network
+    restart: always
+    
+
+# networks:
+#   hr-webportal-network:
+#     name: hr-webportal-network
+#     external: true
+#     driver: bridge
+
+networks:
+  app-network:
+    driver: bridge
